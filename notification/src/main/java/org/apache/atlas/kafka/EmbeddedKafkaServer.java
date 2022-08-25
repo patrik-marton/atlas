@@ -17,34 +17,27 @@
  */
 package org.apache.atlas.kafka;
 
-import kafka.server.KafkaConfig;
-import kafka.server.KafkaServer;
-import kafka.zookeeper.ZooKeeperClientException;
 import org.apache.atlas.ApplicationProperties;
 import org.apache.atlas.AtlasException;
 import org.apache.atlas.service.Service;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.ConfigurationConverter;
 import org.apache.kafka.clients.producer.*;
-import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.utils.Time;
-import org.apache.zookeeper.server.NIOServerCnxnFactory;
-import org.apache.zookeeper.server.ServerCnxnFactory;
-import org.apache.zookeeper.server.ZooKeeperServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.apache.atlas.util.CommandHandlerUtility;
-import scala.Option;
+
+import net.mguenther.kafka.junit.EmbeddedKafkaCluster;
+import net.mguenther.kafka.junit.EmbeddedKafkaClusterConfig;
+import net.mguenther.kafka.junit.EmbeddedKafkaConfig;
 
 import javax.inject.Inject;
 import java.io.File;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.net.BindException;
 import java.util.*;
 
 @Component
@@ -60,12 +53,11 @@ public class EmbeddedKafkaServer implements Service {
 
     private final boolean           isEmbedded;
     private       Properties        properties;
-    private       KafkaServer       kafkaServer;
-    private       ServerCnxnFactory factory;
+    private       EmbeddedKafkaCluster kafkaCluster;
 
 
     @Inject
-    public EmbeddedKafkaServer(Configuration applicationProperties) throws AtlasException {
+    public EmbeddedKafkaServer(Configuration applicationProperties) {
         Configuration kafkaConf = ApplicationProperties.getSubsetConfiguration(applicationProperties, PROPERTY_PREFIX);
 
         this.isEmbedded = applicationProperties.getBoolean(PROPERTY_EMBEDDED, false);
@@ -78,7 +70,6 @@ public class EmbeddedKafkaServer implements Service {
 
         if (isEmbedded) {
             try {
-                startZk();
                 startKafka();
             } catch (Exception e) {
                 throw new AtlasException("Failed to start embedded kafka", e);
@@ -94,49 +85,13 @@ public class EmbeddedKafkaServer implements Service {
     public void stop() {
         LOG.info("==> EmbeddedKafkaServer.stop(isEmbedded={})", isEmbedded);
 
-        if (kafkaServer != null) {
-            kafkaServer.shutdown();
-        }
-
-        if (factory != null) {
-            factory.shutdown();
+        if (kafkaCluster != null) {
+            kafkaCluster.stop();
         }
 
         LOG.info("<== EmbeddedKafka.stop(isEmbedded={})", isEmbedded);
     }
 
-    private String startZk() throws IOException, InterruptedException {
-        String zkValue = properties.getProperty("zookeeper.connect");
-
-        LOG.info("Starting zookeeper at {}", zkValue);
-
-        URL zkAddress    = getURL(zkValue);
-        File snapshotDir = constructDir("zk/txn");
-        File logDir      = constructDir("zk/snap");
-
-        for (int attemptCount = 0; attemptCount < MAX_RETRY_TO_ACQUIRE_PORT; attemptCount++) {
-            try {
-                factory     = NIOServerCnxnFactory.createFactory(new InetSocketAddress(zkAddress.getHost(), zkAddress.getPort()), 1024);
-                break;
-            } catch (BindException e) {
-                LOG.warn("Attempt {}: Starting zookeeper at {} failed", attemptCount, zkValue);
-
-                if(attemptCount == MAX_RETRY_TO_ACQUIRE_PORT - 1) {
-                    throw e;
-                }
-
-                CommandHandlerUtility.tryKillingProcessUsingPort(zkAddress.getPort(), attemptCount != 0);
-            }
-        }
-
-        factory.startup(new ZooKeeperServer(snapshotDir, logDir, 500));
-
-        String ret = factory.getLocalAddress().getAddress().toString();
-
-        LOG.info("Embedded zookeeper for Kafka started at {}", ret);
-
-        return ret;
-    }
 
     private void startKafka() throws IOException {
         String kafkaValue = properties.getProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG);
@@ -154,20 +109,22 @@ public class EmbeddedKafkaServer implements Service {
                 brokerConfig.setProperty("log.dirs", constructDir("kafka").getAbsolutePath());
                 brokerConfig.setProperty("log.flush.interval.messages", String.valueOf(1));
 
-                kafkaServer = new KafkaServer(KafkaConfig.fromProps(brokerConfig), Time.SYSTEM, Option.apply(this.getClass().getName()), false);
+                kafkaCluster = EmbeddedKafkaCluster.provisionWith(EmbeddedKafkaClusterConfig
+                          .newClusterConfig()
+                          .configure(EmbeddedKafkaConfig.brokers().withAll(brokerConfig)));
+                kafkaCluster.start();
 
-                kafkaServer.startup();
                 break;
-            } catch (KafkaException | ZooKeeperClientException e) {
+            } catch (RuntimeException e) {
                 LOG.warn("Attempt {}: kafka server with broker config {} failed", attemptCount, brokerConfig);
 
                 if (attemptCount == MAX_RETRY_TO_ACQUIRE_PORT - 1) {
                     throw e;
                 }
 
-                if (kafkaServer != null) {
+                if (kafkaCluster != null) {
                     try {
-                        kafkaServer.shutdown();
+                        kafkaCluster.stop();
                     } catch (Exception ex) {
                         LOG.info("Failed to shutdown kafka server", ex);
                     }

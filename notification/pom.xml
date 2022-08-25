@@ -68,11 +68,6 @@
         </dependency>
 
         <dependency>
-            <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka_${kafka.scala.binary.version}</artifactId>
-        </dependency>
-
-        <dependency>
             <groupId>org.testng</groupId>
             <artifactId>testng</artifactId>
         </dependency>
@@ -87,6 +82,10 @@
             <artifactId>atlas-intg</artifactId>
             <classifier>tests</classifier>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.mguenther.kafka</groupId>
+            <artifactId>kafka-junit</artifactId>
         </dependency>
 
     </dependencies>
@@ -163,11 +162,6 @@
                                     <groupId>log4j</groupId>
                                     <artifactId>log4j</artifactId>
                                     <version>${log4j.version}</version>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>org.apache.kafka</groupId>
-                                    <artifactId>kafka_${kafka.scala.binary.version}</artifactId>
-                                    <version>${kafka.version}</version>
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>org.apache.kafka</groupId>

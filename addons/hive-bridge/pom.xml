@@ -269,11 +269,6 @@
                                         </artifactItem>
                                         <artifactItem>
                                             <groupId>org.apache.kafka</groupId>
-                                            <artifactId>kafka_${kafka.scala.binary.version}</artifactId>
-                                            <version>${kafka.version}</version>
-                                        </artifactItem>
-                                        <artifactItem>
-                                            <groupId>org.apache.kafka</groupId>
                                             <artifactId>kafka-clients</artifactId>
                                             <version>${kafka.version}</version>
                                         </artifactItem>
